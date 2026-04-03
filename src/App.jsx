@@ -1,10 +1,15 @@
 import { useState, useRef, useEffect } from "react";
 import "./App.css";
 
+// Best-in-class default models
+const DEFAULT_CHAT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct:featherless-ai";
+const DEFAULT_IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell";
+
 function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [imageHistory, setImageHistory] = useState([]);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -13,6 +18,9 @@ function App() {
 
   useEffect(() => {
     scrollToBottom();
+    // Update image history whenever messages change
+    const images = messages.filter(m => m.type === "image");
+    setImageHistory(images);
   }, [messages, isLoading]);
 
   const handleSend = async (e) => {
@@ -25,6 +33,45 @@ function App() {
     setMessages(updatedMessages);
     setInput("");
     setIsLoading(true);
+
+    // Smart Intent Detection: Check if the user is asking for an image
+    const imageKeywords = ["generate", "create", "make", "draw", "poster", "image", "picture", "photo"];
+    const isImageRequest = imageKeywords.some(keyword => input.toLowerCase().includes(keyword)) &&
+      !input.toLowerCase().includes("how to") &&
+      !input.toLowerCase().includes("explain");
+
+    if (isImageRequest) {
+      // Automatically redirect to image generation
+      try {
+        const response = await fetch(
+          "https://router.huggingface.co/nscale/v1/images/generations",
+          {
+            headers: {
+              Authorization: `Bearer ${import.meta.env.VITE_HF_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            method: "POST",
+            body: JSON.stringify({
+              response_format: "b64_json",
+              prompt: input.trim(),
+              model: DEFAULT_IMAGE_MODEL,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (data.data && data.data[0] && data.data[0].b64_json) {
+          const imageUrl = `data:image/png;base64,${data.data[0].b64_json}`;
+          setMessages((prev) => [...prev, { role: "assistant", content: imageUrl, type: "image", prompt: input.trim() }]);
+          setIsLoading(false);
+          return; // Exit early as we've handled the image
+        }
+      } catch (error) {
+        console.error("Auto Image Gen Error:", error);
+        // Fall back to normal chat if image gen fails
+      }
+    }
 
     try {
       const response = await fetch(
@@ -39,7 +86,7 @@ function App() {
             messages: updatedMessages
               .filter(m => m.type === "text")
               .map(m => ({ role: m.role, content: m.content })),
-            model: "Qwen/Qwen2.5-1.5B-Instruct:featherless-ai",
+            model: DEFAULT_CHAT_MODEL,
           }),
         }
       );
@@ -80,7 +127,7 @@ function App() {
           body: JSON.stringify({
             response_format: "b64_json",
             prompt: promptText,
-            model: "stabilityai/stable-diffusion-xl-base-1.0",
+            model: DEFAULT_IMAGE_MODEL,
           }),
         }
       );
@@ -101,6 +148,50 @@ function App() {
     }
   };
 
+  const handleNewSession = () => {
+    setMessages([]);
+    setImageHistory([]);
+    setInput("");
+    setIsLoading(false);
+  };
+
+  const handleCopy = (text) => {
+    navigator.clipboard.writeText(text);
+    // Could add a toast here
+  };
+
+  const enhancePrompt = async () => {
+    if (!input.trim() || isLoading) return;
+    setIsLoading(true);
+    try {
+      const response = await fetch(
+        "https://router.huggingface.co/v1/chat/completions",
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_HF_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+          body: JSON.stringify({
+            messages: [{
+              role: "user",
+              content: `You are a creative prompt engineer. Take this simple image prompt and expand it into a detailed, high-quality descriptive prompt (about 30-50 words) for an image generator (like Stable Diffusion). Output ONLY the enhanced prompt text. Simple prompt: "${input}"`
+            }],
+            model: DEFAULT_CHAT_MODEL,
+          }),
+        }
+      );
+      const data = await response.json();
+      if (data.choices && data.choices[0] && data.choices[0].message) {
+        setInput(data.choices[0].message.content.trim());
+      }
+    } catch (error) {
+      console.error("Enhancer Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="nova-dashboard">
       <div className="mesh-background">
@@ -113,11 +204,9 @@ function App() {
         <div className="brand">
           <div className="brand-logo">
             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 2L2 22H22L12 2Z" stroke="url(#gradient)" strokeWidth="2.5" strokeLinejoin="round" />
-              <path d="M12 12V22" stroke="url(#gradient)" strokeWidth="2.5" strokeLinecap="round" />
-              <circle cx="12" cy="12" r="3" fill="#0ee3a3" filter="drop-shadow(0 0 8px #0ee3a3)" />
+              <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" fill="url(#sidebar-star-grad)" />
               <defs>
-                <linearGradient id="gradient" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                <linearGradient id="sidebar-star-grad" x1="2" y1="2" x2="22" y2="22">
                   <stop stopColor="#3b82f6" />
                   <stop offset="1" stopColor="#0ee3a3" />
                 </linearGradient>
@@ -127,7 +216,7 @@ function App() {
           <h1 className="brand-text">Nova AI</h1>
         </div>
 
-        <button className="new-chat-btn">
+        <button className="new-chat-btn" onClick={handleNewSession}>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -137,23 +226,25 @@ function App() {
 
         <div className="history-section">
           <span className="history-title">Recent Threads</span>
-          <div className="history-item active">
+          <div className="history-item active" onClick={handleNewSession}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
             </svg>
             <span className="history-text">Current Session</span>
           </div>
-          <div className="history-item">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
-            </svg>
-            <span className="history-text">Understanding Physics</span>
-          </div>
-          <div className="history-item">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
-            </svg>
-            <span className="history-text">Code Architecture</span>
+        </div>
+
+        <div className="history-section secondary">
+          <span className="history-title">Generated Works ({imageHistory.length})</span>
+          <div className="image-grid-mini">
+            {imageHistory.map((img, i) => (
+              <div key={i} className="mini-thumb" onClick={() => {
+                const el = document.querySelectorAll('.generated-image')[i];
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }}>
+                <img src={img.content} alt="generated" />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -237,6 +328,12 @@ function App() {
                     ) : (
                       msg.content
                     )}
+                    <button className="copy-btn-inline" onClick={() => handleCopy(msg.content)} title="Copy to clipboard">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                      </svg>
+                    </button>
                   </div>
                 </div>
               ))}
@@ -279,25 +376,42 @@ function App() {
                 disabled={isLoading}
                 autoFocus
               />
-              <button 
-                type="button" 
-                className={`nova-image-gen ${input.trim() ? 'active' : ''}`} 
-                onClick={handleGenerateImage}
-                disabled={!input.trim() || isLoading}
-                title="Generate AI Image"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-              </button>
-              <button type="submit" className={`nova-submit ${input.trim() ? 'active' : ''}`} disabled={!input.trim() || isLoading}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <line x1="22" y1="2" x2="11" y2="13"></line>
-                  <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-                </svg>
-              </button>
+
+              <div className="controls-group">
+                <button
+                  type="button"
+                  className={`magic-enhance ${input.trim() ? 'active' : ''}`}
+                  onClick={enhancePrompt}
+                  disabled={!input.trim() || isLoading}
+                  title="AI Enhance Prompt"
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 2L15 9L22 12L15 15L12 22L9 15L2 12L9 9L12 2Z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className={`nova-image-gen ${input.trim() ? 'active' : ''}`}
+                  onClick={handleGenerateImage}
+                  disabled={!input.trim() || isLoading}
+                  title="Generate AI Image"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                </button>
+
+                <div className="action-divider"></div>
+
+                <button type="submit" className={`nova-submit ${input.trim() ? 'active' : ''}`} disabled={!input.trim() || isLoading}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                    <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                  </svg>
+                </button>
+              </div>
             </div>
             <p className="footer-note">Nova AI uses Hugging Face models. Always double check important information.</p>
           </form>
