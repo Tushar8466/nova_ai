@@ -401,6 +401,73 @@ body {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
 }
 
+/* Image Message Styles */
+.generated-image-container {
+  position: relative;
+  width: 100%;
+  max-width: 512px;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  background: #000;
+  transition: transform 0.3s ease;
+}
+
+.generated-image-container:hover {
+  transform: scale(1.02);
+}
+
+.generated-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.image-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.generated-image-container:hover .image-overlay {
+  opacity: 1;
+}
+
+.download-btn {
+  background: var(--accent-gradient);
+  border: none;
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 50px;
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  transform: translateY(10px);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.generated-image-container:hover .download-btn {
+  transform: translateY(0);
+}
+
+.download-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 10px 20px rgba(20, 184, 166, 0.4);
+}
+
 /* Advanced loading ticks */
 .loading {
   display: flex;
@@ -514,6 +581,32 @@ body {
   background: var(--accent-gradient);
   color: #fff;
   box-shadow: 0 4px 15px rgba(20, 184, 166, 0.3);
+}
+
+.nova-image-gen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-right: 8px;
+}
+
+.nova-image-gen.active {
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--accent-blue);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.nova-image-gen:hover.active {
+  background: rgba(59, 130, 246, 0.2);
+  transform: translateY(-2px);
 }
 
 .nova-submit:hover.active {

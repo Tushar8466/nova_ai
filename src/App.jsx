@@ -19,7 +19,7 @@ function App() {
     if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = { role: "user", content: input.trim() };
+    const userMessage = { role: "user", content: input.trim(), type: "text" };
     const updatedMessages = [...messages, userMessage];
 
     setMessages(updatedMessages);
@@ -36,7 +36,9 @@ function App() {
           },
           method: "POST",
           body: JSON.stringify({
-            messages: updatedMessages,
+            messages: updatedMessages
+              .filter(m => m.type === "text")
+              .map(m => ({ role: m.role, content: m.content })),
             model: "Qwen/Qwen2.5-1.5B-Instruct:featherless-ai",
           }),
         }
@@ -45,13 +47,55 @@ function App() {
       const data = await response.json();
 
       if (data.choices && data.choices[0] && data.choices[0].message) {
-        setMessages((prev) => [...prev, data.choices[0].message]);
+        setMessages((prev) => [...prev, { ...data.choices[0].message, type: "text" }]);
       } else {
-        setMessages((prev) => [...prev, { role: "assistant", content: "Error: Unexpected response format from the AI." }]);
+        setMessages((prev) => [...prev, { role: "assistant", content: "Error: Unexpected response format from the AI.", type: "text" }]);
       }
     } catch (error) {
       console.error("Error:", error);
-      setMessages((prev) => [...prev, { role: "assistant", content: "Error connecting to Hugging Face API." }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error connecting to Hugging Face API.", type: "text" }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGenerateImage = async () => {
+    if (!input.trim() || isLoading) return;
+
+    const promptText = input.trim();
+    const userMessage = { role: "user", content: `Generate image: ${promptText}`, type: "text" };
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setIsLoading(true);
+
+    try {
+      const response = await fetch(
+        "https://router.huggingface.co/nscale/v1/images/generations",
+        {
+          headers: {
+            Authorization: `Bearer ${import.meta.env.VITE_HF_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+          body: JSON.stringify({
+            response_format: "b64_json",
+            prompt: promptText,
+            model: "stabilityai/stable-diffusion-xl-base-1.0",
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.data && data.data[0] && data.data[0].b64_json) {
+        const imageUrl = `data:image/png;base64,${data.data[0].b64_json}`;
+        setMessages((prev) => [...prev, { role: "assistant", content: imageUrl, type: "image", prompt: promptText }]);
+      } else {
+        setMessages((prev) => [...prev, { role: "assistant", content: "Failed to generate image.", type: "text" }]);
+      }
+    } catch (error) {
+      console.error("Image Generation Error:", error);
+      setMessages((prev) => [...prev, { role: "assistant", content: "Error generating image. Please try again.", type: "text" }]);
     } finally {
       setIsLoading(false);
     }
@@ -171,7 +215,28 @@ function App() {
                     ) : 'T'}
                   </div>
                   <div className="message-content">
-                    {msg.content}
+                    {msg.type === "image" ? (
+                      <div className="generated-image-container">
+                        <img src={msg.content} alt={msg.prompt} className="generated-image" />
+                        <div className="image-overlay">
+                          <button className="download-btn" onClick={() => {
+                            const link = document.createElement("a");
+                            link.href = msg.content;
+                            link.download = `nova-ai-${Date.now()}.png`;
+                            link.click();
+                          }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                              <polyline points="7 10 12 15 17 10"></polyline>
+                              <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            Save Image
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      msg.content
+                    )}
                   </div>
                 </div>
               ))}
@@ -214,6 +279,19 @@ function App() {
                 disabled={isLoading}
                 autoFocus
               />
+              <button 
+                type="button" 
+                className={`nova-image-gen ${input.trim() ? 'active' : ''}`} 
+                onClick={handleGenerateImage}
+                disabled={!input.trim() || isLoading}
+                title="Generate AI Image"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
+                </svg>
+              </button>
               <button type="submit" className={`nova-submit ${input.trim() ? 'active' : ''}`} disabled={!input.trim() || isLoading}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="22" y1="2" x2="11" y2="13"></line>
