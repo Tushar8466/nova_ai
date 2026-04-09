@@ -6,6 +6,11 @@ const DEFAULT_CHAT_MODEL = "Qwen/Qwen2.5-1.5B-Instruct:featherless-ai";
 const DEFAULT_IMAGE_MODEL = "black-forest-labs/FLUX.1-schnell";
 
 function App() {
+  const [sessions, setSessions] = useState(() => {
+    const saved = localStorage.getItem("nova_sessions");
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -21,11 +26,53 @@ function App() {
     // Update image history whenever messages change
     const images = messages.filter(m => m.type === "image");
     setImageHistory(images);
-  }, [messages, isLoading]);
+
+    // Persist current session to the sessions list
+    if (currentSessionId && messages.length > 0) {
+      setSessions(prev => {
+        const sessionIndex = prev.findIndex(s => s.id === currentSessionId);
+        const updatedSessions = [...prev];
+
+        if (sessionIndex !== -1) {
+          updatedSessions[sessionIndex] = {
+            ...updatedSessions[sessionIndex],
+            messages: messages,
+            updatedAt: Date.now()
+          };
+        } else {
+          // This case should ideally be handled when the first message is sent, 
+          // but added here as a safety measure.
+          updatedSessions.unshift({
+            id: currentSessionId,
+            title: messages[0].content.slice(0, 30) + (messages[0].content.length > 30 ? "..." : ""),
+            messages: messages,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          });
+        }
+        return updatedSessions;
+      });
+    }
+  }, [messages, isLoading, currentSessionId]);
+
+  useEffect(() => {
+    localStorage.setItem("nova_sessions", JSON.stringify(sessions));
+  }, [sessions]);
 
   const handleSend = async (e) => {
-    if (e) e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    let sessionId = currentSessionId;
+    if (!sessionId) {
+      sessionId = Date.now().toString();
+      setCurrentSessionId(sessionId);
+      const newSession = {
+        id: sessionId,
+        title: input.trim().slice(0, 30) + (input.trim().length > 30 ? "..." : ""),
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      setSessions(prev => [newSession, ...prev]);
+    }
 
     const userMessage = { role: "user", content: input.trim(), type: "text" };
     const updatedMessages = [...messages, userMessage];
@@ -109,6 +156,20 @@ function App() {
   const handleGenerateImage = async () => {
     if (!input.trim() || isLoading) return;
 
+    let sessionId = currentSessionId;
+    if (!sessionId) {
+      sessionId = Date.now().toString();
+      setCurrentSessionId(sessionId);
+      const newSession = {
+        id: sessionId,
+        title: "Image: " + input.trim().slice(0, 20),
+        messages: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      setSessions(prev => [newSession, ...prev]);
+    }
+
     const promptText = input.trim();
     const userMessage = { role: "user", content: `Generate image: ${promptText}`, type: "text" };
     setMessages(prev => [...prev, userMessage]);
@@ -150,9 +211,25 @@ function App() {
 
   const handleNewSession = () => {
     setMessages([]);
-    setImageHistory([]);
+    setCurrentSessionId(null);
     setInput("");
     setIsLoading(false);
+  };
+
+  const loadSession = (id) => {
+    const session = sessions.find(s => s.id === id);
+    if (session) {
+      setCurrentSessionId(session.id);
+      setMessages(session.messages);
+    }
+  };
+
+  const deleteSession = (e, id) => {
+    e.stopPropagation();
+    setSessions(prev => prev.filter(s => s.id !== id));
+    if (currentSessionId === id) {
+      handleNewSession();
+    }
   };
 
   const handleCopy = (text) => {
@@ -226,12 +303,29 @@ function App() {
 
         <div className="history-section">
           <span className="history-title">Recent Threads</span>
-          <div className="history-item active" onClick={handleNewSession}>
+          <div className={`history-item ${!currentSessionId ? 'active' : ''}`} onClick={handleNewSession}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
+              <path d="M12 5v14M5 12h14"></path>
             </svg>
-            <span className="history-text">Current Session</span>
+            <span className="history-text">New Session</span>
           </div>
+          {sessions.map(session => (
+            <div
+              key={session.id}
+              className={`history-item ${currentSessionId === session.id ? 'active' : ''}`}
+              onClick={() => loadSession(session.id)}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10z"></path>
+              </svg>
+              <span className="history-text">{session.title}</span>
+              <button className="delete-session" onClick={(e) => deleteSession(e, session.id)} title="Delete session">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                  <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+            </div>
+          ))}
         </div>
 
         <div className="history-section secondary">
